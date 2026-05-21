@@ -1,0 +1,1 @@
+HDM ERP: Payment rejected. Reason: {{reason}}. Contact support.

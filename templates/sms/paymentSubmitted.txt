@@ -1,0 +1,1 @@
+HDM ERP: Payment submitted. Ref: {{reference}}. We will review and notify you.
