@@ -29,7 +29,7 @@ const getLandingConfig = async (req, res) => {
         moduleTags: config?.moduleTags || [],
         launchButtonLabel: config?.launchButtonLabel || 'Launch',
         registerButtonLabel: config?.registerButtonLabel || 'Get Started',
-        aboutText: config?.aboutText || '',
+        aboutText: config?.aboutText || settings?.landingPage?.aboutText || '',
         contactEmail: general.contactEmail || 'support@hdmerp.com',
         contactPhone: general.contactPhone || '+254 700 000 000',
         address: general.address || 'Nairobi, Kenya',
@@ -37,6 +37,8 @@ const getLandingConfig = async (req, res) => {
         maintenanceMessage: general.maintenanceMessage || 'We are currently performing scheduled maintenance. Please check back soon.',
         faqs: config?.faqs || { questions: [] },
         payments: settings?.payments || {},
+        desktopApp: settings?.downloads?.desktop || { enabled: false, url: '', label: 'Download for Desktop' },
+        mobileApp: settings?.downloads?.mobile || { enabled: false, url: '', label: 'Get on Mobile' },
         footer: {
           copyright: footer.copyright || '© 2026 HDM ERP',
           supportEmail: footer.supportEmail || general.contactEmail,

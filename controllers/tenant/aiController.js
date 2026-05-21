@@ -7,15 +7,34 @@ const logger = require('../../utils/logger');
 
 const getAISettings = async (req, res) => {
   try {
-    let settings = await TenantAISettings.findOne({ tenantId: req.tenantId });
-    if (!settings) settings = await TenantAISettings.create({ tenantId: req.tenantId });
-    res.json({ success: true, data: settings });
+    const Tenant = require('../../models/master/Tenant');
+    const tenant = await Tenant.findById(req.tenantId);
+    if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
+
+    const [settings, aiConfig, plan] = await Promise.all([
+      TenantAISettings.findOne({ tenantId: req.tenantId }),
+      require('../../models/ai/AIConfig').findOne(),
+      require('../../models/master/Plan').findOne({ name: tenant.plan })
+    ]);
+
+    const globalEnabled = aiConfig?.features?.clientAI !== false;
+    const planAllows = plan?.modules?.aiSparkle === true;
+
+    res.json({
+      success: true,
+      data: {
+        keySource: settings?.keySource || 'hdm',
+        moduleScopes: settings?.moduleScopes || [],
+        enabled: globalEnabled && planAllows,
+        globalEnabled,
+        planAllows
+      }
+    });
   } catch (err) {
     logger.error('Get AI settings error:', err.message);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
-
 const updateAISettings = async (req, res) => {
   try {
     const { error, value } = updateAISettingsSchema.validate(req.body, { stripUnknown: true });
