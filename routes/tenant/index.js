@@ -3,9 +3,11 @@ const router = express.Router();
 const tenantAuth = require('../../middleware/tenant/auth');
 const tenantResolver = require('../../middleware/tenant/tenant');
 const { planLimit } = require('../../middleware/tenant/planLimit');
-const companyAdminAuth = require('../../middleware/tenant/companyAdmin');
 
-// All tenant routes require authentication and tenant resolution
+// Outward API routes use API key auth (no JWT needed)
+router.use('/ai/outward', require('./outwardRoutes'));
+
+// All routes below require JWT authentication
 router.use(tenantAuth);
 router.use(tenantResolver);
 
