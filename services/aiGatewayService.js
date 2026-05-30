@@ -139,23 +139,59 @@ const tenantQuery = async (tenantId, question, tenantInfo) => {
   const payload = {
     query: `${question}\n\n(Note: Display all monetary amounts in ${currency}. The data includes raw numbers and _formatted versions like ${currency} 38,300.)`,
     tenant_id: tenantId.toString(),
-    context: { source: 'tenant', tenant_info: { name: tenantInfo?.companyName || 'Tenant', plan: tenantInfo?.plan || 'standard', business_type: tenantInfo?.businessType || 'General', currency } },
+    context: {
+      source: 'tenant',
+      tenant_info: {
+        name: tenantInfo?.companyName || 'Tenant',
+        plan: tenantInfo?.plan || 'standard',
+        business_type: tenantInfo?.businessType || 'General',
+        currency
+      }
+    },
     data: businessData
   };
 
-  const response = await axios.post(`${baseUrl}/erp/query`, payload, { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 30000 });
-  await AIUsageLog.create({ tenantId, query: question, tokensUsed: response.data?.data?.tokens_used || 0, provider, timestamp: new Date() });
+  const response = await axios.post(`${baseUrl}/erp/query`, payload, {
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    timeout: 30000
+  });
+
+  await AIUsageLog.create({
+    tenantId,
+    query: question,
+    tokensUsed: response.data?.data?.tokens_used || 0,
+    provider,
+    timestamp: new Date()
+  });
+
   return response.data;
 };
-
 const landingQuery = async (question, landingConfig) => {
   const aiConfig = await AIConfig.findOne();
   const chatbot = aiConfig?.landingChatbot || {};
   if (!aiConfig?.features?.landingPageAI || !chatbot.enabled) throw new Error('Chatbot disabled');
+  
   const baseUrl = chatbot.provider === 'hdm-ai' ? config.hdmAi.baseUrl : getBaseUrlForProvider(chatbot.provider);
   const apiKey = chatbot.apiKey || config.hdmAi.apiKey;
-  const payload = { query: question, tenant_id: 'landing', context: { source: 'landing', payment_methods: landingConfig?.paymentMethods?.join(', ') || '', locations: landingConfig?.locations?.join(', ') || '', contacts: `${landingConfig?.contacts?.email || ''}, ${landingConfig?.contacts?.phone || ''}`, features: landingConfig?.features?.join(', ') || '', pricing: landingConfig?.pricingSummary || '' } };
-  const response = await axios.post(`${baseUrl}/erp/query`, payload, { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 15000 });
+  
+  const payload = {
+    query: question,
+    tenant_id: 'landing',
+    context: {
+      source: 'landing',
+      payment_methods: landingConfig?.paymentMethods?.join(', ') || '',
+      locations: landingConfig?.locations?.join(', ') || '',
+      contacts: `${landingConfig?.contacts?.email || ''}, ${landingConfig?.contacts?.phone || ''}`,
+      features: landingConfig?.features?.join(', ') || '',
+      pricingSummary: landingConfig?.pricingSummary || ''
+    }
+  };
+  
+  const response = await axios.post(`${baseUrl}/erp/query`, payload, {
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    timeout: 15000
+  });
+  
   return response.data;
 };
 
