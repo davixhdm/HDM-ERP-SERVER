@@ -52,22 +52,16 @@ const getBaseUrlForProvider = (provider) => {
   return providers[provider] || '';
 };
 
-const buildContextData = async (tenantId, moduleScopes) => {
-  const data = {
-    invoices: [],
-    bills: [],
-    payments: [],
-    products: [],
-    customers: [],
-    suppliers: [],
-    employees: [],
-    salesOrders: [],
-    purchaseOrders: [],
-    workOrders: [],
-    summary: {}
-  };
+const buildContextData = async (tenantId, moduleScopes, question = '') => {
+  const msg = (question || '').toLowerCase();
 
-  // Finance
+  const generalQueries = ['health', 'overview', 'business', 'performance', 'report', 'summary', 'all', 'everything', 'sync', 'analyze', 'dashboard'];
+  const isGeneralQuery = generalQueries.some(q => msg.includes(q)) || !msg || msg.length < 5;
+  const shouldInclude = (keywords) => isGeneralQuery || keywords.some(k => msg.includes(k));
+
+  const data = { summary: {} };
+
+  // Finance — always include if scoped
   if (moduleScopes.includes('finance')) {
     const Invoice = require('../models/tenant/Invoice');
     const Bill = require('../models/tenant/Bill');
@@ -81,115 +75,62 @@ const buildContextData = async (tenantId, moduleScopes) => {
       Account.find({ tenantId }).lean()
     ]);
 
-    data.invoices = invoices.map(i => ({
-      number: i.invoiceNumber,
-      customer: i.customerName || 'N/A',
-      amount: i.grandTotal,
-      status: i.status,
-      date: i.invoiceDate,
-      dueDate: i.dueDate
-    }));
+    data.invoices = invoices.map(i => ({ number: i.invoiceNumber, customer: i.customerName || 'N/A', amount: i.grandTotal, status: i.status, date: i.invoiceDate }));
+    data.bills = bills.map(b => ({ number: b.billNumber, supplier: b.supplierName || 'N/A', amount: b.grandTotal, status: b.status, date: b.billDate }));
+    data.payments = payments.map(p => ({ type: p.type, payerPayee: p.payerPayee, amount: p.amount, method: p.paymentMethod, date: p.date }));
+    data.accounts = accounts.map(a => ({ name: a.name, type: a.type, balance: a.currentBalance }));
 
-    data.bills = bills.map(b => ({
-      number: b.billNumber,
-      supplier: b.supplierName || 'N/A',
-      amount: b.grandTotal,
-      status: b.status,
-      date: b.billDate,
-      dueDate: b.dueDate
-    }));
-
-    data.payments = payments.map(p => ({
-      type: p.type,
-      payerPayee: p.payerPayee,
-      amount: p.amount,
-      method: p.paymentMethod,
-      date: p.date
-    }));
-
-    // Summary
-    const paidInvoices = invoices.filter(i => i.status === 'paid');
-    const unpaidInvoices = invoices.filter(i => i.status === 'sent' || i.status === 'draft');
+    const paidInv = invoices.filter(i => i.status === 'paid');
+    const unpaidInv = invoices.filter(i => i.status !== 'paid' && i.status !== 'cancelled');
     const paidBills = bills.filter(b => b.status === 'paid');
-    const unpaidBills = bills.filter(b => b.status === 'open' || b.status === 'draft');
-    const incomePayments = payments.filter(p => p.type === 'income');
-    const expensePayments = payments.filter(p => p.type === 'expense');
+    const unpaidBills = bills.filter(b => b.status !== 'paid' && b.status !== 'void');
+    const incomePmt = payments.filter(p => p.type === 'income');
+    const expensePmt = payments.filter(p => p.type === 'expense');
 
-    data.summary.totalRevenue = paidInvoices.reduce((s, i) => s + (i.grandTotal || 0), 0) + incomePayments.reduce((s, p) => s + (p.amount || 0), 0);
-    data.summary.pendingRevenue = unpaidInvoices.reduce((s, i) => s + (i.grandTotal || 0), 0);
-    data.summary.totalExpenses = paidBills.reduce((s, b) => s + (b.grandTotal || 0), 0) + expensePayments.reduce((s, p) => s + (p.amount || 0), 0);
+    data.summary.totalRevenue = paidInv.reduce((s, i) => s + (i.grandTotal || 0), 0) + incomePmt.reduce((s, p) => s + (p.amount || 0), 0);
+    data.summary.pendingRevenue = unpaidInv.reduce((s, i) => s + (i.grandTotal || 0), 0);
+    data.summary.totalExpenses = paidBills.reduce((s, b) => s + (b.grandTotal || 0), 0) + expensePmt.reduce((s, p) => s + (p.amount || 0), 0);
     data.summary.pendingExpenses = unpaidBills.reduce((s, b) => s + (b.grandTotal || 0), 0);
-    data.summary.paidInvoices = paidInvoices.length;
-    data.summary.unpaidInvoices = unpaidInvoices.length;
+    data.summary.netProfit = data.summary.totalRevenue - data.summary.totalExpenses;
+    data.summary.paidInvoices = paidInv.length;
+    data.summary.unpaidInvoices = unpaidInv.length;
     data.summary.paidBills = paidBills.length;
     data.summary.unpaidBills = unpaidBills.length;
-    data.summary.totalAccounts = accounts.length;
-    data.summary.accounts = accounts.map(a => ({ name: a.name, type: a.type, balance: a.currentBalance }));
   }
 
   // Inventory & Products
-  if (moduleScopes.includes('inventory') || moduleScopes.includes('products')) {
+  if ((moduleScopes.includes('inventory') || moduleScopes.includes('products')) && shouldInclude(['stock', 'inventory', 'product', 'low', 'reorder'])) {
     const Product = require('../models/tenant/Product');
     const Warehouse = require('../models/tenant/Warehouse');
-    const [products, warehouses] = await Promise.all([
-      Product.find({ tenantId, isActive: true }).lean(),
-      Warehouse.find({ tenantId }).lean()
-    ]);
-
-    data.products = products.map(p => ({
-      name: p.name,
-      sku: p.sku,
-      category: p.category,
-      stock: p.stock || 0,
-      unit: p.unit,
-      costPrice: p.costPrice,
-      sellingPrice: p.sellingPrice,
-      reorderLevel: p.reorderLevel
-    }));
-
+    const [products, warehouses] = await Promise.all([Product.find({ tenantId, isActive: true }).lean(), Warehouse.find({ tenantId }).lean()]);
+    data.products = products.map(p => ({ name: p.name, sku: p.sku, stock: p.stock || 0, unit: p.unit, costPrice: p.costPrice, sellingPrice: p.sellingPrice, reorderLevel: p.reorderLevel }));
+    data.warehouses = warehouses.map(w => ({ name: w.name, code: w.code }));
     data.summary.totalProducts = products.length;
     data.summary.totalStock = products.reduce((s, p) => s + (p.stock || 0), 0);
     data.summary.lowStockItems = products.filter(p => (p.stock || 0) <= (p.reorderLevel || 0)).length;
     data.summary.lowStockList = products.filter(p => (p.stock || 0) <= (p.reorderLevel || 0)).map(p => p.name);
-    data.summary.totalWarehouses = warehouses.length;
   }
 
   // Sales
-  if (moduleScopes.includes('sales')) {
+  if (moduleScopes.includes('sales') && shouldInclude(['sale', 'order', 'revenue', 'customer', 'quotation'])) {
     const SalesOrder = require('../models/tenant/SalesOrder');
     const orders = await SalesOrder.find({ tenantId }).sort({ createdAt: -1 }).limit(20).lean();
-    data.salesOrders = orders.map(o => ({
-      number: o.orderNumber,
-      customer: o.customerName || 'N/A',
-      total: o.grandTotal,
-      status: o.status,
-      date: o.orderDate
-    }));
-
+    data.salesOrders = orders.map(o => ({ number: o.orderNumber, customer: o.customerName || 'N/A', total: o.grandTotal, status: o.status, date: o.orderDate }));
     data.summary.totalSalesOrders = orders.length;
     data.summary.pendingOrders = orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled').length;
-    data.summary.completedOrders = orders.filter(o => o.status === 'delivered').length;
   }
 
   // HR
-  if (moduleScopes.includes('hr')) {
+  if (moduleScopes.includes('hr') && shouldInclude(['employee', 'staff', 'payroll', 'salary', 'attendance', 'leave'])) {
     const Employee = require('../models/tenant/Employee');
     const employees = await Employee.find({ tenantId, isActive: true }).lean();
-    data.employees = employees.map(e => ({
-      name: `${e.firstName} ${e.lastName}`,
-      department: e.department,
-      position: e.position,
-      type: e.employmentType,
-      salary: e.basicSalary
-    }));
-
+    data.employees = employees.map(e => ({ name: `${e.firstName} ${e.lastName}`, department: e.department, position: e.position, salary: e.basicSalary }));
     data.summary.totalEmployees = employees.length;
     data.summary.totalPayroll = employees.reduce((s, e) => s + (e.basicSalary || 0), 0);
-    data.summary.departments = [...new Set(employees.map(e => e.department).filter(Boolean))];
   }
 
   // Contacts
-  if (moduleScopes.includes('contacts')) {
+  if (moduleScopes.includes('contacts') && shouldInclude(['customer', 'supplier', 'contact', 'partner'])) {
     const Contact = require('../models/tenant/Contact');
     const contacts = await Contact.find({ tenantId }).lean();
     data.customers = contacts.filter(c => c.type === 'customer').map(c => ({ name: c.companyName, email: c.email, phone: c.phone }));
@@ -199,36 +140,20 @@ const buildContextData = async (tenantId, moduleScopes) => {
   }
 
   // Supply Chain
-  if (moduleScopes.includes('supplyChain')) {
+  if (moduleScopes.includes('supplyChain') && shouldInclude(['purchase', 'supplier', 'po', 'procurement', 'requisition'])) {
     const PurchaseOrder = require('../models/tenant/PurchaseOrder');
     const pos = await PurchaseOrder.find({ tenantId }).sort({ createdAt: -1 }).limit(20).lean();
-    data.purchaseOrders = pos.map(po => ({
-      number: po.orderNumber,
-      supplier: po.supplierName || 'N/A',
-      total: po.grandTotal,
-      status: po.status,
-      date: po.orderDate
-    }));
+    data.purchaseOrders = pos.map(po => ({ number: po.orderNumber, supplier: po.supplierName || 'N/A', total: po.grandTotal, status: po.status, date: po.orderDate }));
     data.summary.totalPurchaseOrders = pos.length;
-    data.summary.pendingPOs = pos.filter(po => po.status !== 'delivered' && po.status !== 'cancelled').length;
   }
 
   // Manufacturing
-  if (moduleScopes.includes('manufacturing')) {
+  if (moduleScopes.includes('manufacturing') && shouldInclude(['manufacturing', 'work order', 'production', 'qc', 'bom'])) {
     const WorkOrder = require('../models/tenant/WorkOrder');
     const workOrders = await WorkOrder.find({ tenantId }).sort({ createdAt: -1 }).limit(20).lean();
-    data.workOrders = workOrders.map(wo => ({
-      number: wo.orderNumber,
-      product: wo.product?.name || 'N/A',
-      quantity: wo.quantity,
-      status: wo.status,
-      output: wo.outputQuantity,
-      scrap: wo.scrapQuantity,
-      qcStatus: wo.qualityStatus
-    }));
+    data.workOrders = workOrders.map(wo => ({ number: wo.orderNumber, product: wo.product?.name || 'N/A', quantity: wo.quantity, status: wo.status, output: wo.outputQuantity, qcStatus: wo.qualityStatus }));
     data.summary.totalWorkOrders = workOrders.length;
     data.summary.completedWorkOrders = workOrders.filter(wo => wo.status === 'completed').length;
-    data.summary.pendingWorkOrders = workOrders.filter(wo => wo.status !== 'completed' && wo.status !== 'cancelled').length;
   }
 
   return data;
@@ -236,76 +161,42 @@ const buildContextData = async (tenantId, moduleScopes) => {
 
 const tenantQuery = async (tenantId, question, tenantInfo) => {
   const { provider, model, baseUrl, apiKey, moduleScopes } = await getTenantAIConfig(tenantId);
-  const businessData = await buildContextData(tenantId, moduleScopes);
+  const businessData = await buildContextData(tenantId, moduleScopes, question);
 
   const payload = {
     query: question,
     tenant_id: tenantId.toString(),
-    context: {
-      source: 'tenant',
-      tenant_info: {
-        name: tenantInfo?.companyName || 'Tenant',
-        plan: tenantInfo?.plan || 'standard',
-        business_type: tenantInfo?.businessType || 'General'
-      }
-    },
+    context: { source: 'tenant', tenant_info: { name: tenantInfo?.companyName || 'Tenant', plan: tenantInfo?.plan || 'standard', business_type: tenantInfo?.businessType || 'General' } },
     data: businessData
   };
 
   const response = await axios.post(`${baseUrl}/erp/query`, payload, {
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     timeout: 30000
   });
 
-  await AIUsageLog.create({
-    tenantId,
-    query: question,
-    tokensUsed: response.data?.data?.tokens_used || 0,
-    provider,
-    timestamp: new Date()
-  });
-
+  await AIUsageLog.create({ tenantId, query: question, tokensUsed: response.data?.data?.tokens_used || 0, provider, timestamp: new Date() });
   return response.data;
 };
 
 const landingQuery = async (question, landingConfig) => {
   const aiConfig = await AIConfig.findOne();
   const chatbot = aiConfig?.landingChatbot || {};
+  if (!aiConfig?.features?.landingPageAI || !chatbot.enabled) throw new Error('Chatbot disabled');
 
-  if (!aiConfig?.features?.landingPageAI || !chatbot.enabled) {
-    throw new Error('Chatbot disabled');
-  }
-
-  const baseUrl = chatbot.provider === 'hdm-ai'
-    ? config.hdmAi.baseUrl
-    : getBaseUrlForProvider(chatbot.provider);
-
+  const baseUrl = chatbot.provider === 'hdm-ai' ? config.hdmAi.baseUrl : getBaseUrlForProvider(chatbot.provider);
   const apiKey = chatbot.apiKey || config.hdmAi.apiKey;
 
   const payload = {
     query: question,
     tenant_id: 'landing',
-    context: {
-      source: 'landing',
-      payment_methods: landingConfig?.paymentMethods?.join(', ') || '',
-      locations: landingConfig?.locations?.join(', ') || '',
-      contacts: `${landingConfig?.contacts?.email || ''}, ${landingConfig?.contacts?.phone || ''}`,
-      features: landingConfig?.features?.join(', ') || '',
-      pricing: landingConfig?.pricingSummary || ''
-    }
+    context: { source: 'landing', payment_methods: landingConfig?.paymentMethods?.join(', ') || '', locations: landingConfig?.locations?.join(', ') || '', contacts: `${landingConfig?.contacts?.email || ''}, ${landingConfig?.contacts?.phone || ''}`, features: landingConfig?.features?.join(', ') || '', pricing: landingConfig?.pricingSummary || '' }
   };
 
   const response = await axios.post(`${baseUrl}/erp/query`, payload, {
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     timeout: 15000
   });
-
   return response.data;
 };
 

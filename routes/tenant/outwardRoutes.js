@@ -4,7 +4,6 @@ const outwardApiKeyAuth = require('../../middleware/tenant/apiKeyAuth');
 const aiGatewayService = require('../../services/aiGatewayService');
 const logger = require('../../utils/logger');
 
-// All outward routes use API key auth, not JWT
 router.use(outwardApiKeyAuth);
 
 /**
@@ -20,21 +19,35 @@ router.get('/', (req, res) => {
       scopes: req.apiKeyScopes,
       endpoints: {
         query: 'POST /api/tenant/ai/outward/query',
-        body: {
-          question: 'Your question here (required)'
-        }
-      },
-      usage: {
-        curl: `curl -H "x-api-key: YOUR_KEY" -X POST ${req.protocol}://${req.get('host')}/api/tenant/ai/outward/query -H "Content-Type: application/json" -d '{"question":"What is my revenue?"}'`,
-        header: 'x-api-key: YOUR_API_KEY',
-        contentType: 'application/json'
+        data: 'POST /api/tenant/ai/outward/data',
+        body: { question: 'Your question here (required for query)' }
       }
     }
   });
 });
 
 /**
- * @desc    Query AI with outward API key
+ * @desc    Get raw structured data only (no AI)
+ * @route   POST /api/tenant/ai/outward/data
+ * @access  Public (API Key)
+ */
+router.post('/data', async (req, res) => {
+  try {
+    const scopes = req.apiKeyScopes || [];
+    const question = req.body.question || 'sync all data';
+
+    logger.info(`Outward data pull from ${req.tenant?.companyName}: scopes=${scopes.join(',')}`);
+    const businessData = await aiGatewayService.buildContextData(req.tenantId, scopes, question);
+
+    res.json({ success: true, data: businessData });
+  } catch (err) {
+    logger.error('Outward data pull error:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to fetch data' });
+  }
+});
+
+/**
+ * @desc    Query AI + return both raw data and AI reply
  * @route   POST /api/tenant/ai/outward/query
  * @access  Public (API Key)
  */
@@ -42,19 +55,20 @@ router.post('/query', async (req, res) => {
   try {
     const { question } = req.body;
     if (!question) {
-      return res.status(400).json({
-        success: false,
-        message: 'Question is required',
-        usage: { body: { question: 'Your question here' } }
-      });
+      return res.status(400).json({ success: false, message: 'Question is required' });
     }
 
+    const scopes = req.apiKeyScopes || [];
     const tenantInfo = {
       companyName: req.tenant?.companyName || 'Tenant',
       plan: req.tenant?.plan || 'standard',
       businessType: 'General'
     };
 
+    // Fetch raw data FIRST
+    const rawData = await aiGatewayService.buildContextData(req.tenantId, scopes, question);
+
+    // Then get AI analysis
     logger.info(`Outward AI query from ${req.tenant?.companyName}: "${question.substring(0, 50)}..."`);
     const result = await aiGatewayService.tenantQuery(req.tenantId, question, tenantInfo);
 
@@ -64,18 +78,12 @@ router.post('/query', async (req, res) => {
         reply: result?.data?.reply || 'No response',
         provider: result?.data?.provider || 'unknown',
         tokens_used: result?.data?.tokens_used || 0,
-        data_analyzed: result?.data?.data_analyzed || false
+        raw_data: rawData
       }
     });
   } catch (err) {
     logger.error('Outward AI query error:', err.message);
-    const statusCode = err.response?.status || 500;
-    const message = err.response?.data?.message || err.message || 'AI service unavailable';
-    res.status(statusCode).json({
-      success: false,
-      message,
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
+    res.status(500).json({ success: false, message: 'AI service unavailable' });
   }
 });
 
