@@ -1,3 +1,4 @@
+
 const axios = require('axios');
 const AIConfig = require('../models/ai/AIConfig');
 const TenantAISettings = require('../models/ai/TenantAISettings');
@@ -256,6 +257,9 @@ const landingQuery = async (question, landingConfig) => {
   const baseUrl = chatbot.provider === 'hdm-ai' ? config.hdmAi.baseUrl : getBaseUrlForProvider(chatbot.provider);
   const apiKey = chatbot.apiKey || config.hdmAi.apiKey;
 
+  // Strip commas from pricing to prevent AI hallucination (1,540 → 1540)
+  const cleanPricing = (landingConfig?.pricingSummary || '').replace(/,/g, '');
+
   const payload = {
     query: question,
     tenant_id: 'landing',
@@ -265,7 +269,7 @@ const landingQuery = async (question, landingConfig) => {
       locations: landingConfig?.locations?.join(', ') || '',
       contacts: `${landingConfig?.contacts?.email || ''}, ${landingConfig?.contacts?.phone || ''}`,
       features: landingConfig?.features?.join(', ') || '',
-      pricingSummary: landingConfig?.pricingSummary || ''
+      pricingSummary: cleanPricing
     }
   };
 
