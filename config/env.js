@@ -5,7 +5,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const defaults = {
   PORT: '5000',
-  NODE_ENV: 'production',
+  NODE_ENV: 'development',
   MONGODB_URI: 'mongodb://localhost:27017/hdm_erp',
   JWT_SECRET: 'dev_jwt_secret_change_in_prod',
   JWT_REFRESH_SECRET: 'dev_refresh_secret',
@@ -16,10 +16,10 @@ const defaults = {
   CLIENT_URL: 'https://hdmerp.pxxl.click',
   ADMIN_URL: 'https://hdm-admin.pxxl.click',
   LANDING_URL: 'https://hdmerp.pxxl.click',
-  BREVO_API_KEY: '',
-  EMAIL_FROM: 'noreply@hdmerp.com',
-  EMAIL_FROM_NAME: 'HDM ERP',
-  SMS_SENDER_NAME: 'HDM ERP',
+  HDM_EMAIL_API_KEY: '',
+  HDM_EMAIL_API_URL: 'https://hdmbridgeserver.pxxl.click/api',
+  HDM_EMAIL_FROM: 'noreply@hdmerp.com',
+  HDM_EMAIL_FROM_NAME: 'HDM ERP',
   CLOUDINARY_CLOUD_NAME: '',
   CLOUDINARY_API_KEY: '',
   CLOUDINARY_API_SECRET: '',
@@ -29,7 +29,7 @@ const defaults = {
   MPESA_CONSUMER_SECRET: '',
   MPESA_PASSKEY: '',
   MPESA_SHORTCODE: '174379',
-  MPESA_ENVIRONMENT: 'production',
+  MPESA_ENVIRONMENT: 'sandbox',
   HDM_AI_BASE_URL: 'https://hdmai-server.onrender.com/api/v1',
   HDM_AI_API_KEY: 'hdm_erp_f10c05018a390678378c40dbb110f6c6e09963eeebc111f6',
   HDM_AI_ENABLED: 'true',
@@ -53,11 +53,11 @@ module.exports = {
   clientUrl: process.env.CLIENT_URL || defaults.CLIENT_URL,
   adminUrl: process.env.ADMIN_URL || defaults.ADMIN_URL,
   landingUrl: process.env.LANDING_URL || defaults.LANDING_URL,
-  brevo: {
-    apiKey: process.env.BREVO_API_KEY || defaults.BREVO_API_KEY,
-    emailFrom: process.env.EMAIL_FROM || defaults.EMAIL_FROM,
-    emailFromName: process.env.EMAIL_FROM_NAME || defaults.EMAIL_FROM_NAME,
-    smsSender: process.env.SMS_SENDER_NAME || defaults.SMS_SENDER_NAME
+  hdmEmail: {
+    apiKey: process.env.HDM_EMAIL_API_KEY || defaults.HDM_EMAIL_API_KEY,
+    apiUrl: process.env.HDM_EMAIL_API_URL || defaults.HDM_EMAIL_API_URL,
+    fromEmail: process.env.HDM_EMAIL_FROM || defaults.HDM_EMAIL_FROM,
+    fromName: process.env.HDM_EMAIL_FROM_NAME || defaults.HDM_EMAIL_FROM_NAME,
   },
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || defaults.CLOUDINARY_CLOUD_NAME,

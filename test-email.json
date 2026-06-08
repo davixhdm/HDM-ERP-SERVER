@@ -1,0 +1,8 @@
+{
+  "from": "davismcintyre5@gmail.com",
+  "fromName": "HDM ERP",
+  "to": "davismcintyre5@gmail.com",
+  "subject": "HDM Bridge Test",
+  "htmlBody": "<h1>Test</h1><p>Email via HDM Bridge</p>",
+  "textBody": "Test email via HDM Bridge"
+}
