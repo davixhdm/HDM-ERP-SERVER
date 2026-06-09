@@ -30,7 +30,7 @@ const getTenantAIConfig = async (tenantId) => {
 
 const getBaseUrlForProvider = (provider) => {
   const providers = {
-    'hdm-ai': config.hdmAi.baseUrl || 'https://hdmai-server.onrender.com/api/v1',
+    'hdm-ai': config.hdmAi.baseUrl || 'https://hdm-ai-server.onrender.com/api/v1',
     'openai': 'https://api.openai.com/v1', 'anthropic': 'https://api.anthropic.com/v1',
     'deepseek': 'https://api.deepseek.com/v1', 'gemini': 'https://generativelanguage.googleapis.com/v1beta',
     'mistral': 'https://api.mistral.ai/v1', 'cohere': 'https://api.cohere.ai/v1'
@@ -165,28 +165,43 @@ const tenantQuery = async (tenantId, question, tenantInfo) => {
 const landingQuery = async (question, landingConfig) => {
   const aiConfig = await AIConfig.findOne();
   const chatbot = aiConfig?.landingChatbot || {};
-  if (!aiConfig?.features?.landingPageAI || !chatbot.enabled) throw new Error('Chatbot disabled');
 
-  const baseUrl = chatbot.provider === 'hdm-ai' ? config.hdmAi.baseUrl : getBaseUrlForProvider(chatbot.provider);
-  const apiKey = chatbot.apiKey || config.hdmAi.apiKey;
-  const cleanPricing = (landingConfig?.pricingSummary || '').replace(/,/g, '');
+  if (!aiConfig?.features?.landingPageAI || !chatbot.enabled) {
+    throw new Error('Chatbot disabled');
+  }
+
+  // Use landing chatbot's own baseUrl from DB
+  const baseUrl = chatbot.baseUrl
+    || aiConfig?.baseUrl
+    || config.hdmAi.baseUrl
+    || 'https://hdm-ai-server.onrender.com/api/v1';
+
+  // Use landing chatbot's own apiKey from DB
+  const apiKey = chatbot.apiKey
+    || aiConfig?.apiKey
+    || config.hdmAi.apiKey;
 
   const payload = {
-    query: question, tenant_id: 'landing',
+    query: question,
+    tenant_id: 'landing',
     context: {
       source: 'landing',
       payment_methods: landingConfig?.paymentMethods?.join(', ') || '',
       locations: landingConfig?.locations?.join(', ') || '',
       contacts: `${landingConfig?.contacts?.email || ''}, ${landingConfig?.contacts?.phone || ''}`,
       features: landingConfig?.features?.join(', ') || '',
-      pricingSummary: cleanPricing
+      pricing: landingConfig?.pricingSummary || ''
     }
   };
 
   const response = await axios.post(`${baseUrl}/erp/query`, payload, {
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 15000
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    timeout: 15000
   });
+
   return response.data;
 };
-
 module.exports = { tenantQuery, landingQuery, buildContextData };
