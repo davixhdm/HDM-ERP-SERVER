@@ -14,5 +14,6 @@ router.use('/ai', require('./aiRoutes'));
 router.use('/uploads', require('./uploadsRoutes'));
 router.use('/legal', require('./legalRoutes'));
 router.use('/backups', require('./backupRoutes'));
+router.use('/email', require('./emailRoutes'));
 
 module.exports = router;

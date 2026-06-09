@@ -10,8 +10,12 @@ const systemSettingsSchema = new mongoose.Schema({
     timezone: { type: String, default: 'Africa/Nairobi' },
     dateFormat: { type: String, default: 'DD/MM/YYYY' },
     defaultLanguage: { type: String, default: 'en' },
-    maintenanceMode: { type: Boolean, default: false },
-    maintenanceMessage: { type: String, default: 'We are currently performing scheduled maintenance. Please check back soon.' }
+  maintenanceMode: { type: Boolean, default: false },
+maintenanceMessage: { type: String, default: 'We are currently performing scheduled maintenance. Please check back soon.' },
+maintenanceStart: Date,
+maintenanceEnd: Date,
+maintenanceSent: { type: Boolean, default: false },
+maintenanceStartedSent: { type: Boolean, default: false },
   },
   branding: {
     logoNavbar: { type: String, default: '' },

@@ -18,7 +18,7 @@ const sendEmail = async ({ to, toName, subject, htmlContent, textContent }) => {
           'Authorization': `Bearer ${config.hdmEmail.apiKey}`,
           'Content-Type': 'application/json',
         },
-        timeout: 15000,
+        timeout: 60000, // 60 seconds
       }
     );
     return { success: true };
