@@ -17,9 +17,9 @@ const outwardAPIKeySchema = new mongoose.Schema({
     unique: true
   },
   prefix: String,
-  scopes: [{
+scopes: [{
     type: String,
-    enum: ['finance', 'hr', 'sales', 'inventory', 'supplyChain', 'manufacturing', 'contacts', 'products', 'reports']
+    enum: ['finance', 'hr', 'sales', 'inventory', 'supplyChain', 'manufacturing', 'contacts', 'products', 'reports', 'communications', 'crm', 'projects', 'assets']
   }],
   isActive: {
     type: Boolean,

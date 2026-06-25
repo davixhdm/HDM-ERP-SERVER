@@ -43,46 +43,54 @@ const defaultPlans = [
       supplyChain: true, orders: true, manufacturing: false,
       contacts: true, products: true, reports: true, settings: true,
       dashboard: true, landingPage: true,
-      aiSparkle: false, aiFileUpload: false, outwardApiKeys: false
+      aiSparkle: false, aiFileUpload: false, outwardApiKeys: false,
+      communications: true,
+      crm: false, projects: false, assets: false
     },
     limits: { maxUsers: 3, maxStorageGB: 0.5, maxCustomReports: 3, aiWrite: false, aiOutwardKeys: 0, whiteLabel: false, multiCompany: false, dedicatedDatabase: false, supportLevel: 'community' }
   },
   {
     name: 'standard', displayName: 'Standard', enabled: true,
     trialDays: 0, sortOrder: 2,
-    pricing: { monthly: 10, yearly: 100, permanent: 250, stripePriceId: '' },
+    pricing: { monthly: 4, yearly: 44, permanent: 84, stripePriceId: '' },
     modules: {
       finance: true, hr: true, sales: true, inventory: true,
       supplyChain: true, orders: true, manufacturing: false,
       contacts: true, products: true, reports: true, settings: true,
       dashboard: true, landingPage: true,
-      aiSparkle: true, aiFileUpload: false, outwardApiKeys: false
+      aiSparkle: false, aiFileUpload: false, outwardApiKeys: false,
+      communications: true,
+      crm: true, projects: false, assets: false
     },
     limits: { maxUsers: 5, maxStorageGB: 1, maxCustomReports: 5, aiWrite: false, aiOutwardKeys: 0, whiteLabel: false, multiCompany: false, dedicatedDatabase: false, supportLevel: 'email_chat' }
   },
   {
     name: 'pro', displayName: 'Pro', enabled: true,
     trialDays: 0, sortOrder: 3,
-    pricing: { monthly: 25, yearly: 250, permanent: 600, stripePriceId: '' },
+    pricing: { monthly: 6, yearly: 69, permanent: 154, stripePriceId: '' },
     modules: {
       finance: true, hr: true, sales: true, inventory: true,
       supplyChain: true, orders: true, manufacturing: true,
       contacts: true, products: true, reports: true, settings: true,
       dashboard: true, landingPage: true,
-      aiSparkle: true, aiFileUpload: true, outwardApiKeys: true
+      aiSparkle: true, aiFileUpload: true, outwardApiKeys: true,
+      communications: true,
+      crm: true, projects: true, assets: false
     },
     limits: { maxUsers: 20, maxStorageGB: 5, maxCustomReports: 20, aiWrite: true, aiOutwardKeys: 1, whiteLabel: false, multiCompany: false, dedicatedDatabase: false, supportLevel: 'email_chat' }
   },
   {
     name: 'enterprise', displayName: 'Enterprise', enabled: true,
     trialDays: 0, sortOrder: 4,
-    pricing: { monthly: 50, yearly: 500, permanent: 1200, stripePriceId: '' },
+    pricing: { monthly: 10, yearly: 97, permanent: 211, stripePriceId: '' },
     modules: {
       finance: true, hr: true, sales: true, inventory: true,
       supplyChain: true, orders: true, manufacturing: true,
       contacts: true, products: true, reports: true, settings: true,
       dashboard: true, landingPage: true,
-      aiSparkle: true, aiFileUpload: true, outwardApiKeys: true
+      aiSparkle: true, aiFileUpload: true, outwardApiKeys: true,
+      communications: true,
+      crm: true, projects: true, assets: true
     },
     limits: { maxUsers: 999, maxStorageGB: 100, maxCustomReports: 999, aiWrite: true, aiOutwardKeys: 999, whiteLabel: true, multiCompany: true, dedicatedDatabase: true, supportLevel: 'dedicated' }
   }

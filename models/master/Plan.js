@@ -45,7 +45,12 @@ const planSchema = new mongoose.Schema({
     landingPage: { type: Boolean, default: true },
     aiSparkle: { type: Boolean, default: false },
     aiFileUpload: { type: Boolean, default: false },
-    outwardApiKeys: { type: Boolean, default: false }
+    communications: { type: Boolean, default: true },
+    outwardApiKeys: { type: Boolean, default: false },
+    // ── NEW MODULES ──
+    crm: { type: Boolean, default: false },
+    projects: { type: Boolean, default: false },
+    assets: { type: Boolean, default: false }
   },
   limits: {
     maxUsers: { type: Number, default: 3 },

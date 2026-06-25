@@ -47,10 +47,23 @@ const createJournal = async (req, res) => {
     res.status(201).json({ success: true, data: entry });
   } catch (err) { logger.error('Create journal error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
 };
+const updateJournal = async (req, res) => {
+  try {
+    const entry = await JournalEntry.findOneAndUpdate({ _id: req.params.id, tenantId: req.tenantId }, req.body, { new: true });
+    if (!entry) return res.status(404).json({ success: false, message: 'Not found' });
+    res.json({ success: true, data: entry });
+  } catch (err) { logger.error('Update journal error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
+};
+const deleteJournal = async (req, res) => {
+  try {
+    await JournalEntry.findOneAndDelete({ _id: req.params.id, tenantId: req.tenantId });
+    res.json({ success: true, message: 'Deleted' });
+  } catch (err) { logger.error('Delete journal error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
+};
 
 // ==================== INVOICES ====================
 const getInvoices = async (req, res) => {
-  try { const invoices = await Invoice.find({ tenantId: req.tenantId }).sort({ createdAt: -1 }); res.json({ success: true, data: invoices }); }
+  try { const invoices = await Invoice.find({ tenantId: req.tenantId }).populate('customer', 'companyName').sort({ createdAt: -1 }); res.json({ success: true, data: invoices }); }
   catch (err) { logger.error('Get invoices error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
 };
 const createInvoice = async (req, res) => {
@@ -65,6 +78,30 @@ const createInvoice = async (req, res) => {
     res.status(201).json({ success: true, data: invoice });
   } catch (err) { logger.error('Create invoice error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
 };
+const updateInvoice = async (req, res) => {
+  try {
+    const { items, ...rest } = req.body;
+    const updateData = { ...rest };
+    if (items) {
+      const computedItems = items.map(item => ({ ...item, total: item.quantity * item.unitPrice }));
+      const subtotal = computedItems.reduce((s, i) => s + i.total, 0);
+      const taxTotal = computedItems.reduce((s, i) => s + (i.total * (i.taxRate || 0) / 100), 0);
+      updateData.items = computedItems;
+      updateData.subtotal = subtotal;
+      updateData.taxTotal = taxTotal;
+      updateData.grandTotal = subtotal + taxTotal;
+    }
+    const invoice = await Invoice.findOneAndUpdate({ _id: req.params.id, tenantId: req.tenantId }, updateData, { new: true });
+    if (!invoice) return res.status(404).json({ success: false, message: 'Not found' });
+    res.json({ success: true, data: invoice });
+  } catch (err) { logger.error('Update invoice error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
+};
+const deleteInvoice = async (req, res) => {
+  try {
+    await Invoice.findOneAndDelete({ _id: req.params.id, tenantId: req.tenantId });
+    res.json({ success: true, message: 'Deleted' });
+  } catch (err) { logger.error('Delete invoice error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
+};
 const updateInvoiceStatus = async (req, res) => {
   try {
     const { status } = req.body;
@@ -76,7 +113,6 @@ const updateInvoiceStatus = async (req, res) => {
       const revenueAccount = await Account.findOne({ tenantId: req.tenantId, type: 'income' });
       if (cashAccount && revenueAccount) {
         await JournalEntry.create({ tenantId: req.tenantId, entryNumber: `JE-INV-${invoice.invoiceNumber}`, date: new Date(), description: `Payment for ${invoice.invoiceNumber}`, lines: [{ account: cashAccount._id, debit: invoice.grandTotal, credit: 0, description: 'Cash' }, { account: revenueAccount._id, debit: 0, credit: invoice.grandTotal, description: 'Revenue' }], totalDebit: invoice.grandTotal, totalCredit: invoice.grandTotal, status: 'posted', source: 'invoice', sourceId: invoice._id });
-        invoice.journalEntry = /* entry._id */ undefined;
         await Account.findByIdAndUpdate(cashAccount._id, { $inc: { currentBalance: invoice.grandTotal } });
         await Account.findByIdAndUpdate(revenueAccount._id, { $inc: { currentBalance: invoice.grandTotal } });
       }
@@ -88,7 +124,7 @@ const updateInvoiceStatus = async (req, res) => {
 
 // ==================== BILLS ====================
 const getBills = async (req, res) => {
-  try { const bills = await Bill.find({ tenantId: req.tenantId }).sort({ createdAt: -1 }); res.json({ success: true, data: bills }); }
+  try { const bills = await Bill.find({ tenantId: req.tenantId }).populate('supplier', 'companyName').sort({ createdAt: -1 }); res.json({ success: true, data: bills }); }
   catch (err) { logger.error('Get bills error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
 };
 const createBill = async (req, res) => {
@@ -100,6 +136,27 @@ const createBill = async (req, res) => {
     const bill = await Bill.create({ tenantId: req.tenantId, billNumber, supplier: supplier || null, supplierName: supplierName || '', billDate, dueDate, reference, items: computedItems, subtotal, grandTotal: subtotal, status: 'draft', notes, createdBy: req.user._id });
     res.status(201).json({ success: true, data: bill });
   } catch (err) { logger.error('Create bill error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
+};
+const updateBill = async (req, res) => {
+  try {
+    const { items, ...rest } = req.body;
+    const updateData = { ...rest };
+    if (items) {
+      const computedItems = items.map(item => ({ ...item, total: item.quantity * item.unitPrice }));
+      updateData.items = computedItems;
+      updateData.subtotal = computedItems.reduce((s, i) => s + i.total, 0);
+      updateData.grandTotal = updateData.subtotal;
+    }
+    const bill = await Bill.findOneAndUpdate({ _id: req.params.id, tenantId: req.tenantId }, updateData, { new: true });
+    if (!bill) return res.status(404).json({ success: false, message: 'Not found' });
+    res.json({ success: true, data: bill });
+  } catch (err) { logger.error('Update bill error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
+};
+const deleteBill = async (req, res) => {
+  try {
+    await Bill.findOneAndDelete({ _id: req.params.id, tenantId: req.tenantId });
+    res.json({ success: true, message: 'Deleted' });
+  } catch (err) { logger.error('Delete bill error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
 };
 const updateBillStatus = async (req, res) => {
   try {
@@ -150,6 +207,12 @@ const recordExpense = async (req, res) => {
     res.status(201).json({ success: true, data: payment });
   } catch (err) { logger.error('Record expense error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
 };
+const getRevenueExpenses = async (req, res) => {
+  try {
+    const payments = await Payment.find({ tenantId: req.tenantId }).sort({ createdAt: -1 }).populate('account', 'name code');
+    res.json({ success: true, data: payments });
+  } catch (err) { logger.error('Get revenue/expenses error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
+};
 
 // ==================== FINANCIAL REPORTS ====================
 const getProfitLoss = async (req, res) => {
@@ -187,9 +250,9 @@ const getTrialBalance = async (req, res) => {
 
 module.exports = {
   getAccounts, createAccount, updateAccount, deleteAccount,
-  getJournals, createJournal,
-  getInvoices, createInvoice, updateInvoiceStatus,
-  getBills, createBill, updateBillStatus,
-  recordRevenue, recordExpense,
+  getJournals, createJournal, updateJournal, deleteJournal,
+  getInvoices, createInvoice, updateInvoice, deleteInvoice, updateInvoiceStatus,
+  getBills, createBill, updateBill, deleteBill, updateBillStatus,
+  recordRevenue, recordExpense, getRevenueExpenses,
   getProfitLoss, getBalanceSheet, getTrialBalance
 };

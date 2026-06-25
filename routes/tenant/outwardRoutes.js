@@ -34,7 +34,7 @@ router.get('/', (req, res) => {
 router.post('/data', async (req, res) => {
   try {
     const scopes = req.apiKeyScopes || [];
-    const question = req.body.question || 'sync all data';
+    const question = req.body.question || 'sync all data overview fetch';
 
     logger.info(`Outward data pull from ${req.tenant?.companyName}: scopes=${scopes.join(',')}`);
     const businessData = await aiGatewayService.buildContextData(req.tenantId, scopes, question);

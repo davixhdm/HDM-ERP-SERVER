@@ -47,7 +47,7 @@ const tenantSchema = new mongoose.Schema({
     default: 'KSh',
     enum: ['KSh', 'USD', 'EUR', 'GBP']
   },
-  modules: {
+modules: {
     finance: { type: Boolean, default: true },
     hr: { type: Boolean, default: true },
     sales: { type: Boolean, default: true },
@@ -60,7 +60,14 @@ const tenantSchema = new mongoose.Schema({
     reports: { type: Boolean, default: true },
     settings: { type: Boolean, default: true },
     dashboard: { type: Boolean, default: true },
-    landingPage: { type: Boolean, default: true }
+    landingPage: { type: Boolean, default: true },
+    communications: { type: Boolean, default: true },
+    crm: { type: Boolean, default: false },
+    projects: { type: Boolean, default: false },
+    assets: { type: Boolean, default: false },
+    aiSparkle: { type: Boolean, default: false },
+    aiFileUpload: { type: Boolean, default: false },
+    outwardApiKeys: { type: Boolean, default: false }
   },
   subscriptionExpiry: Date,
   trialEndDate: Date,
