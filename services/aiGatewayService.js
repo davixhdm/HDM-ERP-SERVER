@@ -28,7 +28,7 @@ const getTenantAIConfig = async (tenantId) => {
 
 const getBaseUrlForProvider = (provider) => {
   const providers = {
-    'hdm-ai': config.hdmAi.baseUrl || 'https://hdm-ai-server.onrender.com/api/v1',
+    'hdm-ai': config.hdmAi.baseUrl || 'https://hdmaiserver.pxxl.click/api/v1',
     'openai': 'https://api.openai.com/v1', 'anthropic': 'https://api.anthropic.com/v1',
     'deepseek': 'https://api.deepseek.com/v1', 'gemini': 'https://generativelanguage.googleapis.com/v1beta',
     'mistral': 'https://api.mistral.ai/v1', 'cohere': 'https://api.cohere.ai/v1'
@@ -42,7 +42,7 @@ const buildContextData = async (tenantId, moduleScopes, question = '') => {
   const currency = tenant?.currency || 'KSh';
   const fmt = (amount) => `${currency} ${(amount || 0).toLocaleString()}`;
 
- const generalQueries = ['health', 'overview', 'business', 'performance', 'report', 'summary', 'all', 'everything', 'dashboard', 'sync', 'data', 'pull', 'export', 'fetch'];
+  const generalQueries = ['health', 'overview', 'business', 'performance', 'report', 'summary', 'all', 'everything', 'dashboard', 'sync', 'data', 'pull', 'export', 'fetch'];
   const isGeneralQuery = generalQueries.some(q => msg.includes(q));
   const shouldInclude = (keywords) => isGeneralQuery || keywords.some(k => msg.includes(k));
 
@@ -99,7 +99,7 @@ const buildContextData = async (tenantId, moduleScopes, question = '') => {
   if (moduleScopes.includes('hr') && shouldInclude(['employee', 'staff', 'payroll', 'salary'])) {
     const Employee = require('../models/tenant/Employee');
     const employees = await Employee.find({ tenantId, isActive: true }).lean();
-    data.employees = employees.map(e => ({ name: `${e.firstName} ${e.lastName}`, department: e.department, position: e.position, salary: e.basicSalary }));
+    data.employees = employees.map(e => ({ name: `${e.firstName} ${e.lastName}`, department: e.department, position: e.position, salary: e.basicSalary, email: e.email || '', phone: e.phone || '' }));
     Object.assign(data.summary, { totalEmployees: employees.length, totalPayroll: employees.reduce((s, e) => s + (e.basicSalary || 0), 0) });
   }
 
@@ -203,13 +203,15 @@ const tenantQuery = async (tenantId, question, tenantInfo) => {
   const currency = tenant?.currency || 'KSh';
 
   const payload = {
-    query: question, tenant_id: tenantId.toString(),
+    message: question,
+    tenant_id: tenantId.toString(),
+    provider: provider || 'groq',
     context: { source: 'tenant', tenant_info: { name: tenantInfo?.companyName || 'Tenant', plan: tenantInfo?.plan || 'standard', business_type: tenantInfo?.businessType || 'General', currency } },
     data: businessData
   };
 
   try {
-    const response = await axios.post(`${baseUrl}/erp/query`, payload, {
+    const response = await axios.post(`${baseUrl}/projects/erp/chat`, payload, {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 30000
     });
     await AIUsageLog.create({ tenantId, query: question, tokensUsed: response.data?.data?.tokens_used || 0, provider, timestamp: new Date() });
@@ -229,12 +231,13 @@ const landingQuery = async (question, landingConfig) => {
     throw new Error('Chatbot disabled');
   }
 
-  const baseUrl = chatbot.baseUrl || aiConfig?.baseUrl || config.hdmAi.baseUrl || 'https://hdm-ai-server.onrender.com/api/v1';
+  const baseUrl = chatbot.baseUrl || aiConfig?.baseUrl || config.hdmAi.baseUrl || 'https://hdmaiserver.pxxl.click/api/v1';
   const apiKey = chatbot.apiKey || aiConfig?.apiKey || config.hdmAi.apiKey;
 
   const payload = {
-    query: question,
+    message: question,
     tenant_id: 'landing',
+    provider: chatbot.provider || aiConfig?.provider || 'groq',
     context: {
       source: 'landing',
       payment_methods: landingConfig?.paymentMethods?.join(', ') || '',
@@ -245,7 +248,7 @@ const landingQuery = async (question, landingConfig) => {
     }
   };
 
-  const response = await axios.post(`${baseUrl}/erp/query`, payload, {
+  const response = await axios.post(`${baseUrl}/projects/erp/chat`, payload, {
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     timeout: 15000
   });
@@ -292,48 +295,32 @@ const runProactiveAlerts = async () => {
         const data = await buildContextData(tenant._id, moduleScopes, 'overview');
         const alerts = [];
 
-        // Low stock
         if (data.summary?.lowStockItems > 0 && data.summary?.lowStockList?.length > 0) {
           const items = data.summary.lowStockList.slice(0, 5).join(', ');
           alerts.push({ icon: '📦', title: 'Low Stock Alert', detail: `${data.summary.lowStockItems} item(s): ${items}${data.summary.lowStockList.length > 5 ? ` and ${data.summary.lowStockList.length - 5} more` : ''}`, severity: 'warning' });
         }
-
-        // Unpaid invoices
         if (data.summary?.unpaidInvoices > 0) {
           alerts.push({ icon: '📋', title: 'Unpaid Invoices', detail: `${data.summary.unpaidInvoices} unpaid invoice(s) totaling ${data.summary.currency} ${(data.summary.pendingRevenue || 0).toLocaleString()}`, severity: 'info' });
         }
-
-        // Unpaid bills
         if (data.summary?.unpaidBills > 0) {
           alerts.push({ icon: '💰', title: 'Unpaid Bills', detail: `${data.summary.unpaidBills} unpaid bill(s) totaling ${data.summary.currency} ${(data.summary.pendingExpenses || 0).toLocaleString()}`, severity: 'info' });
         }
-
-        // Negative profit
         if (data.summary?.netProfit < 0) {
           alerts.push({ icon: '📉', title: 'Negative Net Profit', detail: `Expenses exceed revenue by ${data.summary.currency} ${Math.abs(data.summary.netProfit).toLocaleString()}`, severity: 'danger' });
         }
-
-        // Pending sales orders
         if (data.summary?.pendingOrders > 0) {
           alerts.push({ icon: '📝', title: 'Pending Sales Orders', detail: `${data.summary.pendingOrders} order(s) awaiting fulfillment`, severity: 'info' });
         }
-
-        // Pending maintenance
         if (data.summary?.pendingMaintenance > 0) {
           alerts.push({ icon: '🔧', title: 'Pending Maintenance', detail: `${data.summary.pendingMaintenance} maintenance record(s) need attention`, severity: 'warning' });
         }
-
-        // Overdue tasks
         if (data.summary?.pendingTasks > 0 && data.summary?.totalTasks > 0) {
           alerts.push({ icon: '📐', title: 'Pending Tasks', detail: `${data.summary.pendingTasks} task(s) still in progress or todo`, severity: 'info' });
         }
-
-        // Low conversion rate
         if (data.summary?.totalLeads > 5 && data.summary?.conversionRate < 20) {
           alerts.push({ icon: '🎯', title: 'Low Lead Conversion', detail: `Only ${data.summary.conversionRate}% of ${data.summary.totalLeads} leads converted`, severity: 'warning' });
         }
 
-        // Send email
         if (alerts.length > 0 && tenant.contactEmail) {
           const alertCards = alerts.map(a => `
             <div style="margin:10px 0;padding:12px;border-left:4px solid ${a.severity === 'danger' ? '#EF4444' : a.severity === 'warning' ? '#F59E0B' : '#3B82F6'};background:#f9fafb;border-radius:4px;">
