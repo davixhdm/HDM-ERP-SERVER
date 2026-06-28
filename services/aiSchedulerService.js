@@ -44,30 +44,68 @@ const checkTrialExpiry = async () => {
       const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
       const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
 
-      const tenants = await Tenant.find({
+      // ===== FREE TRIAL TENANTS =====
+      const trialTenants = await Tenant.find({
         plan: 'free_trial',
         status: 'active',
-        subscriptionExpiry: { $gte: startOfDay, $lt: endOfDay },
+        trialEndDate: { $gte: startOfDay, $lt: endOfDay },
       });
 
-      for (const tenant of tenants) {
+      for (const tenant of trialTenants) {
         try {
           await sendEmail({
             to: tenant.contactEmail,
             toName: tenant.companyName,
             subject: `HDM ERP — Trial Expires in ${label}`,
-            htmlContent: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;padding:20px;">
-              <h2 style="color:#10B981;">Your Trial is Ending Soon</h2>
-              <p>Hello <strong>${tenant.companyName}</strong>,</p>
-              <p>Your free trial expires in <strong>${label}</strong> on ${tenant.subscriptionExpiry.toLocaleDateString()}.</p>
-              <p>Upgrade now to keep access to all features and your data.</p>
-              <a href="https://hdmerp.pxxl.click/pricing" style="display:inline-block;background:#10B981;color:white;padding:12px 24px;text-decoration:none;border-radius:8px;font-weight:bold;margin:10px 0;">Upgrade Plan</a>
-              <p style="color:#6b7280;font-size:12px;margin-top:20px;">If you have questions, contact support@hdmerp.com</p>
+            htmlContent: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;padding:20px;border:1px solid #e5e7eb;border-radius:8px;">
+              <div style="background:#10B981;padding:16px;text-align:center;border-radius:8px 8px 0 0;margin:-20px -20px 20px -20px;">
+                <h2 style="color:#fff;margin:0;font-size:18px;">⏰ Trial Ending in ${label}</h2>
+              </div>
+              <p style="font-size:14px;">Hello <strong>${tenant.companyName}</strong>,</p>
+              <p style="font-size:13px;color:#4b5563;">Your <strong>14-day free trial</strong> expires in <strong>${label}</strong> on <strong>${tenant.trialEndDate.toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' })}</strong>.</p>
+              <p style="font-size:13px;color:#4b5563;">Upgrade to a paid plan to keep access to all your data and features:</p>
+              <div style="text-align:center;margin:20px 0;">
+                <a href="https://hdmerp.pxxl.click/pricing" style="display:inline-block;background:#10B981;color:white;padding:12px 30px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:14px;">Upgrade Now</a>
+              </div>
+              <p style="color:#9ca3af;font-size:11px;margin-top:20px;text-align:center;">Questions? Contact support@hdmerp.com or +254 768 784 909</p>
             </div>`,
           });
           logger.info(`Trial expiry email sent to ${tenant.companyName} (${label})`);
         } catch (e) {
           logger.warn(`Trial expiry email failed for ${tenant.companyName}:`, e.message);
+        }
+      }
+
+      // ===== PAID PLAN TENANTS =====
+      const paidTenants = await Tenant.find({
+        plan: { $in: ['standard', 'pro', 'enterprise'] },
+        status: 'active',
+        subscriptionExpiry: { $gte: startOfDay, $lt: endOfDay },
+      });
+
+      for (const tenant of paidTenants) {
+        try {
+          const planLabel = tenant.plan.charAt(0).toUpperCase() + tenant.plan.slice(1);
+          await sendEmail({
+            to: tenant.contactEmail,
+            toName: tenant.companyName,
+            subject: `HDM ERP — ${planLabel} Subscription Expires in ${label}`,
+            htmlContent: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;padding:20px;border:1px solid #e5e7eb;border-radius:8px;">
+              <div style="background:#10B981;padding:16px;text-align:center;border-radius:8px 8px 0 0;margin:-20px -20px 20px -20px;">
+                <h2 style="color:#fff;margin:0;font-size:18px;">📅 Subscription Expiring in ${label}</h2>
+              </div>
+              <p style="font-size:14px;">Hello <strong>${tenant.companyName}</strong>,</p>
+              <p style="font-size:13px;color:#4b5563;">Your <strong>${planLabel}</strong> plan subscription expires in <strong>${label}</strong> on <strong>${tenant.subscriptionExpiry.toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: 'numeric' })}</strong>.</p>
+              <p style="font-size:13px;color:#4b5563;">Renew now to avoid service interruption:</p>
+              <div style="text-align:center;margin:20px 0;">
+                <a href="https://hdmerp.pxxl.click/login" style="display:inline-block;background:#10B981;color:white;padding:12px 30px;text-decoration:none;border-radius:8px;font-weight:bold;font-size:14px;">Renew Now</a>
+              </div>
+              <p style="color:#9ca3af;font-size:11px;margin-top:20px;text-align:center;">Questions? Contact support@hdmerp.com or +254 768 784 909</p>
+            </div>`,
+          });
+          logger.info(`Subscription expiry email sent to ${tenant.companyName} (${label})`);
+        } catch (e) {
+          logger.warn(`Subscription expiry email failed for ${tenant.companyName}:`, e.message);
         }
       }
     }

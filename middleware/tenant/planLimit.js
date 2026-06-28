@@ -14,14 +14,27 @@ const planLimit = (moduleName) => {
         return res.status(404).json({ success: false, message: 'Tenant not found.' });
       }
 
+      // Check subscription expiry for paid plans
+      if (tenant.plan !== 'free_trial' && tenant.subscriptionExpiry && tenant.subscriptionExpiry < new Date()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Your subscription has expired. Please renew to continue using HDM ERP.',
+          code: 'SUBSCRIPTION_EXPIRED'
+        });
+      }
+
+      // Check trial expiry for free trial
+      if (tenant.plan === 'free_trial' && tenant.trialEndDate && tenant.trialEndDate < new Date()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Your free trial has ended. Please upgrade to a paid plan to continue.',
+          code: 'TRIAL_EXPIRED'
+        });
+      }
+
       const plan = await Plan.findOne({ name: tenant.plan, enabled: true });
       if (!plan) {
         return res.status(403).json({ success: false, message: 'No active plan found.' });
-      }
-
-      // Check subscription expiry
-      if (tenant.subscriptionExpiry && tenant.subscriptionExpiry < new Date()) {
-        return res.status(403).json({ success: false, message: 'Subscription has expired. Please renew.' });
       }
 
       // Map module names to plan module keys
@@ -34,9 +47,13 @@ const planLimit = (moduleName) => {
         'supplyChain': 'supplyChain',
         'orders': 'orders',
         'manufacturing': 'manufacturing',
+        'crm': 'crm',
+        'projects': 'projects',
+        'assets': 'assets',
         'contacts': 'contacts',
         'products': 'products',
         'reports': 'reports',
+        'communications': 'communications',
         'settings': 'settings',
         'dashboard': 'dashboard',
         'ai': 'aiSparkle',
@@ -45,11 +62,23 @@ const planLimit = (moduleName) => {
       };
 
       const planKey = moduleMap[moduleName];
+
+      // Check plan allows this module
       if (planKey && !plan.modules[planKey]) {
         logger.warn(`Module ${moduleName} blocked for tenant ${tenant._id} on plan ${tenant.plan}`);
         return res.status(403).json({
           success: false,
-          message: `The ${moduleName} module is not available on your current plan. Please upgrade.`
+          message: `The ${moduleName} module is not available on your ${plan.displayName} plan. Please upgrade to access it.`,
+          code: 'MODULE_NOT_IN_PLAN'
+        });
+      }
+
+      // Check tenant hasn't disabled this module
+      if (planKey && tenant.modules?.[planKey] === false) {
+        return res.status(403).json({
+          success: false,
+          message: `The ${moduleName} module has been disabled for your company. Enable it in Settings → Modules.`,
+          code: 'MODULE_DISABLED'
         });
       }
 
