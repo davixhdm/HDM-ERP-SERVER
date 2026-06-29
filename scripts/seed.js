@@ -11,7 +11,7 @@ const LandingPageConfig = require('../models/public/LandingPageConfig');
 const LegalContent = require('../models/public/LegalContent');
 const BackupSettings = require('../models/master/BackupSettings');
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/hdm_erp';
+const MONGODB_URI = process.env.MONGODB_URI;
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const question = (p) => new Promise(r => rl.question(p, r));
