@@ -9,5 +9,6 @@ router.use('/register', require('./registrationRoutes'));
 router.use('/payments', require('./paymentRoutes'));
 router.use('/chatbot', require('./aiChatRoutes'));
 router.use('/legal', require('./legalRoutes'));
+router.use('/renew', require('./renewRoutes'));
 
 module.exports = router;

@@ -3,6 +3,8 @@ const JournalEntry = require('../../models/tenant/JournalEntry');
 const Invoice = require('../../models/tenant/Invoice');
 const Bill = require('../../models/tenant/Bill');
 const Payment = require('../../models/tenant/Payment');
+const Tenant = require('../../models/master/Tenant');
+const sendEmail = require('../../utils/sendEmail');
 const logger = require('../../utils/logger');
 
 // ==================== ACCOUNTS ====================
@@ -63,9 +65,17 @@ const deleteJournal = async (req, res) => {
 
 // ==================== INVOICES ====================
 const getInvoices = async (req, res) => {
-  try { const invoices = await Invoice.find({ tenantId: req.tenantId }).populate('customer', 'companyName').sort({ createdAt: -1 }); res.json({ success: true, data: invoices }); }
-  catch (err) { logger.error('Get invoices error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
+  try {
+    const invoices = await Invoice.find({ tenantId: req.tenantId })
+      .populate('customer', 'companyName email contactEmail')
+      .sort({ createdAt: -1 });
+    res.json({ success: true, data: invoices });
+  } catch (err) {
+    logger.error('Get invoices error:', err.message);
+    res.status(500).json({ success: false, message: 'Error' });
+  }
 };
+
 const createInvoice = async (req, res) => {
   try {
     const { customer, customerName, invoiceDate, dueDate, items, notes } = req.body;
@@ -74,10 +84,19 @@ const createInvoice = async (req, res) => {
     const subtotal = computedItems.reduce((s, i) => s + i.total, 0);
     const taxTotal = computedItems.reduce((s, i) => s + (i.total * (i.taxRate || 0) / 100), 0);
     const grandTotal = subtotal + taxTotal;
-    const invoice = await Invoice.create({ tenantId: req.tenantId, invoiceNumber, customer: customer || null, customerName: customerName || '', invoiceDate, dueDate, items: computedItems, subtotal, taxTotal, grandTotal, status: 'draft', notes, createdBy: req.user._id });
+    const invoice = await Invoice.create({
+      tenantId: req.tenantId, invoiceNumber,
+      customer: customer || null, customerName: customerName || '',
+      invoiceDate, dueDate, items: computedItems, subtotal, taxTotal, grandTotal,
+      status: 'draft', notes, createdBy: req.user._id
+    });
     res.status(201).json({ success: true, data: invoice });
-  } catch (err) { logger.error('Create invoice error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
+  } catch (err) {
+    logger.error('Create invoice error:', err.message);
+    res.status(500).json({ success: false, message: 'Error' });
+  }
 };
+
 const updateInvoice = async (req, res) => {
   try {
     const { items, ...rest } = req.body;
@@ -91,35 +110,141 @@ const updateInvoice = async (req, res) => {
       updateData.taxTotal = taxTotal;
       updateData.grandTotal = subtotal + taxTotal;
     }
-    const invoice = await Invoice.findOneAndUpdate({ _id: req.params.id, tenantId: req.tenantId }, updateData, { new: true });
+    const invoice = await Invoice.findOneAndUpdate(
+      { _id: req.params.id, tenantId: req.tenantId }, updateData, { new: true }
+    );
     if (!invoice) return res.status(404).json({ success: false, message: 'Not found' });
     res.json({ success: true, data: invoice });
-  } catch (err) { logger.error('Update invoice error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
+  } catch (err) {
+    logger.error('Update invoice error:', err.message);
+    res.status(500).json({ success: false, message: 'Error' });
+  }
 };
+
 const deleteInvoice = async (req, res) => {
   try {
     await Invoice.findOneAndDelete({ _id: req.params.id, tenantId: req.tenantId });
     res.json({ success: true, message: 'Deleted' });
-  } catch (err) { logger.error('Delete invoice error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
+  } catch (err) {
+    logger.error('Delete invoice error:', err.message);
+    res.status(500).json({ success: false, message: 'Error' });
+  }
 };
+
 const updateInvoiceStatus = async (req, res) => {
   try {
     const { status } = req.body;
     const invoice = await Invoice.findOne({ _id: req.params.id, tenantId: req.tenantId });
     if (!invoice) return res.status(404).json({ success: false, message: 'Not found' });
+
     invoice.status = status;
+
     if (status === 'paid') {
       const cashAccount = await Account.findOne({ tenantId: req.tenantId, type: 'asset' });
       const revenueAccount = await Account.findOne({ tenantId: req.tenantId, type: 'income' });
       if (cashAccount && revenueAccount) {
-        await JournalEntry.create({ tenantId: req.tenantId, entryNumber: `JE-INV-${invoice.invoiceNumber}`, date: new Date(), description: `Payment for ${invoice.invoiceNumber}`, lines: [{ account: cashAccount._id, debit: invoice.grandTotal, credit: 0, description: 'Cash' }, { account: revenueAccount._id, debit: 0, credit: invoice.grandTotal, description: 'Revenue' }], totalDebit: invoice.grandTotal, totalCredit: invoice.grandTotal, status: 'posted', source: 'invoice', sourceId: invoice._id });
+        await JournalEntry.create({
+          tenantId: req.tenantId, entryNumber: `JE-INV-${invoice.invoiceNumber}`, date: new Date(),
+          description: `Payment for ${invoice.invoiceNumber}`,
+          lines: [
+            { account: cashAccount._id, debit: invoice.grandTotal, credit: 0, description: 'Cash' },
+            { account: revenueAccount._id, debit: 0, credit: invoice.grandTotal, description: 'Revenue' }
+          ],
+          totalDebit: invoice.grandTotal, totalCredit: invoice.grandTotal,
+          status: 'posted', source: 'invoice', sourceId: invoice._id
+        });
         await Account.findByIdAndUpdate(cashAccount._id, { $inc: { currentBalance: invoice.grandTotal } });
         await Account.findByIdAndUpdate(revenueAccount._id, { $inc: { currentBalance: invoice.grandTotal } });
       }
     }
+
     await invoice.save();
+
+    // Send email only if transitioning to 'sent'
+    if (status === 'sent') {
+      try {
+        const tenant = await Tenant.findById(req.tenantId);
+        const customerEmail = tenant?.contactEmail;
+        const customerName = invoice.customerName || 'Customer';
+
+        if (customerEmail) {
+          const itemsRows = (invoice.items || []).map((item, i) =>
+            `<tr>
+              <td style="padding:8px;border:1px solid #e5e7eb;">${i + 1}</td>
+              <td style="padding:8px;border:1px solid #e5e7eb;">${item.description}</td>
+              <td style="padding:8px;border:1px solid #e5e7eb;text-align:center;">${item.quantity}</td>
+              <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">${(item.unitPrice || 0).toLocaleString()}</td>
+              <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">${((item.quantity || 0) * (item.unitPrice || 0)).toLocaleString()}</td>
+            </tr>`
+          ).join('');
+
+          await sendEmail({
+            to: customerEmail,
+            toName: customerName,
+            subject: `Invoice ${invoice.invoiceNumber} from ${tenant?.companyName || 'HDM ERP'}`,
+            htmlContent: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;padding:20px;border:1px solid #e5e7eb;border-radius:8px;">
+              <div style="background:#10B981;padding:16px;text-align:center;border-radius:8px 8px 0 0;margin:-20px -20px 20px -20px;">
+                <h2 style="color:#fff;margin:0;font-size:18px;">INVOICE</h2>
+              </div>
+              <p style="font-size:14px;">Dear <strong>${customerName}</strong>,</p>
+              <p style="font-size:13px;color:#4b5563;">Please find your invoice below:</p>
+              <table style="width:100%;margin:10px 0;font-size:13px;">
+                <tr><td><strong>Invoice #:</strong></td><td>${invoice.invoiceNumber}</td></tr>
+                <tr><td><strong>Date:</strong></td><td>${new Date(invoice.invoiceDate).toLocaleDateString()}</td></tr>
+                <tr><td><strong>Due Date:</strong></td><td>${new Date(invoice.dueDate).toLocaleDateString()}</td></tr>
+              </table>
+              <table style="width:100%;border-collapse:collapse;margin:15px 0;font-size:12px;">
+                <thead><tr style="background:#f3f4f6;"><th style="padding:8px;border:1px solid #e5e7eb;">#</th><th style="padding:8px;border:1px solid #e5e7eb;">Item</th><th style="padding:8px;border:1px solid #e5e7eb;">Qty</th><th style="padding:8px;border:1px solid #e5e7eb;">Price</th><th style="padding:8px;border:1px solid #e5e7eb;">Total</th></tr></thead>
+                <tbody>${itemsRows}</tbody>
+              </table>
+              <p style="text-align:right;font-size:16px;font-weight:bold;color:#10B981;">Total: ${(invoice.grandTotal || 0).toLocaleString()}</p>
+              ${invoice.notes ? `<p style="font-size:12px;color:#6b7280;"><strong>Notes:</strong> ${invoice.notes}</p>` : ''}
+              <p style="color:#9ca3af;font-size:11px;margin-top:20px;text-align:center;">Thank you for your business — ${tenant?.companyName || 'HDM ERP'}</p>
+            </div>`,
+          });
+          logger.info(`Invoice email sent to ${customerEmail} for ${invoice.invoiceNumber}`);
+        }
+      } catch (e) {
+        logger.warn(`Invoice email failed for ${invoice.invoiceNumber}: ${e.message}`);
+      }
+    }
+
+    // Send receipt when paid
+    if (status === 'paid') {
+      try {
+        const tenant = await Tenant.findById(req.tenantId);
+        const customerEmail = tenant?.contactEmail;
+        if (customerEmail) {
+          await sendEmail({
+            to: customerEmail,
+            toName: invoice.customerName || 'Customer',
+            subject: `Payment Received — Invoice ${invoice.invoiceNumber}`,
+            htmlContent: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff;padding:20px;border:1px solid #e5e7eb;border-radius:8px;">
+              <div style="background:#10B981;padding:16px;text-align:center;border-radius:8px 8px 0 0;margin:-20px -20px 20px -20px;">
+                <h2 style="color:#fff;margin:0;font-size:18px;">✅ Payment Received</h2>
+              </div>
+              <p style="font-size:14px;">Dear <strong>${invoice.customerName || 'Customer'}</strong>,</p>
+              <p style="font-size:13px;color:#4b5563;">Thank you for your payment!</p>
+              <table style="width:100%;margin:15px 0;font-size:13px;">
+                <tr><td><strong>Invoice #:</strong></td><td>${invoice.invoiceNumber}</td></tr>
+                <tr><td><strong>Amount Paid:</strong></td><td style="font-weight:bold;color:#10B981;">${(invoice.grandTotal || 0).toLocaleString()}</td></tr>
+                <tr><td><strong>Date:</strong></td><td>${new Date().toLocaleDateString()}</td></tr>
+              </table>
+              <p style="color:#9ca3af;font-size:11px;margin-top:20px;text-align:center;">${tenant?.companyName || 'HDM ERP'}</p>
+            </div>`,
+          });
+          logger.info(`Receipt email sent to ${customerEmail} for ${invoice.invoiceNumber}`);
+        }
+      } catch (e) {
+        logger.warn(`Receipt email failed for ${invoice.invoiceNumber}: ${e.message}`);
+      }
+    }
+
     res.json({ success: true, data: invoice });
-  } catch (err) { logger.error('Update invoice status error:', err.message); res.status(500).json({ success: false, message: 'Error' }); }
+  } catch (err) {
+    logger.error('Update invoice status error:', err.message);
+    res.status(500).json({ success: false, message: 'Error' });
+  }
 };
 
 // ==================== BILLS ====================

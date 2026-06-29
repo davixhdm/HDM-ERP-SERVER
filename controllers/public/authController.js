@@ -17,10 +17,13 @@ const login = async (req, res) => {
     if (!user) return res.status(401).json({ success: false, message: 'Invalid credentials' });
 
     const tenant = await Tenant.findById(user.tenantId);
-    if (!tenant || tenant.status !== 'active') return res.status(401).json({ success: false, message: 'Company account inactive' });
+    if (!tenant) return res.status(401).json({ success: false, message: 'Company account not found' });
 
     const isMatch = await comparePassword(password, user.password);
     if (!isMatch) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+
+    // Allow login even if inactive/expired — middleware will block API calls with 403
+    // This lets the user access /renew page
 
     const deviceId = generateDeviceId(req);
     const trustedDevice = await TrustedDevice.findOne({ tenantId: tenant._id, deviceId, isTrusted: true });
@@ -36,10 +39,9 @@ const login = async (req, res) => {
     if (!trustedDevice.userId) trustedDevice.userId = user._id;
     await trustedDevice.save();
 
-    res.json({ success: true, data: { accessToken, refreshToken, user: { id: user._id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role } } });
+    res.json({ success: true, data: { accessToken, refreshToken, user: { id: user._id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role }, accountStatus: tenant.status } });
   } catch (err) { logger.error('Login error: ' + (err.message || err)); res.status(500).json({ success: false, message: 'Internal server error' }); }
 };
-
 const refreshToken = async (req, res) => {
   try {
     const { refreshToken: token } = req.body;
@@ -51,11 +53,6 @@ const refreshToken = async (req, res) => {
   } catch (err) { logger.warn('Refresh error: ' + (err.message || err)); res.status(401).json({ success: false, message: 'Invalid or expired token' }); }
 };
 
-/**
- * @desc    Forgot password — send reset link
- * @route   POST /api/public/auth/forgot-password
- * @access  Public
- */
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -89,11 +86,6 @@ const forgotPassword = async (req, res) => {
   } catch (err) { logger.error('Forgot password error:', err.message); res.status(500).json({ success: false, message: 'Internal server error' }); }
 };
 
-/**
- * @desc    Reset password with token
- * @route   POST /api/public/auth/reset-password
- * @access  Public
- */
 const resetPassword = async (req, res) => {
   try {
     const { token, password } = req.body;

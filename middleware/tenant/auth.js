@@ -18,8 +18,8 @@ const tenantAuth = async (req, res, next) => {
     }
 
     const tenant = await Tenant.findById(decoded.tenantId);
-    if (!tenant || tenant.status !== 'active') {
-      return res.status(401).json({ success: false, message: 'Company account is not active.' });
+    if (!tenant) {
+      return res.status(401).json({ success: false, message: 'Company account not found.' });
     }
 
     const user = await User.findOne({ _id: decoded.userId, tenantId: decoded.tenantId }).select('-password');
